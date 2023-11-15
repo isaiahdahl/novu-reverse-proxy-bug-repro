@@ -1,0 +1,14 @@
+# Ignore everything in the 'sites' directory
+sites/*
+# Except 'sites/scripts'
+!sites/scripts/
+
+# Inside 'sites/scripts', ignore the specified patterns
+sites/scripts/**/*.sql
+sites/scripts/**/*.gz
+sites/scripts/**/*.tgz
+
+# Ignore the 'sites/scripts/elastic/backups' directory
+/sites/scripts/elastic/backups/
+
+.env

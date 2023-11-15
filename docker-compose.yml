@@ -1,0 +1,191 @@
+version: '3.7'
+services:        
+  novu-nginx:
+      container_name: novu-nginx
+      build: docker-images/nginx
+      ports:
+          - '80:80'
+          - '443:443'
+      domainname: novu.pc.localhost
+      volumes:
+          - ./docker-images/nginx/nginx/sites-enabled:/etc/nginx/sites-enabled
+          - ./sites:/var/sites
+      extra_hosts:
+          - "gcp-production-db:35.203.46.186"
+          - "gcp-production-failover-db:35.203.16.228"
+          - "www.praisecharts.com:35.203.10.41"
+          - "golive.praisecharts.com:35.203.27.167"
+      networks:
+        - novu
+
+  # Redis Container #----------------------------------------
+  novu-redis:
+    image: redis:latest
+    container_name: novu-redis
+    ports:
+      - "6378:6378"
+    volumes:
+      - type: bind
+        source: ./sites/logs/redis
+        target: /var/log/redis
+    privileged: true
+    environment:
+        REDIS_PORT: 6378
+    networks:
+        - novu
+
+  novu-mongodb:
+    image: mongo
+    container_name: novu-mongodb
+    logging:
+      driver: 'none'
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - novu-mongodb:/data/db
+    ports:
+      - 27017:27017
+    restart: unless-stopped
+    networks:
+      - novu
+
+  novu-api:
+    image: 'ghcr.io/novuhq/novu/api:0.21.0'
+    depends_on:
+      - novu-mongodb
+      - novu-redis
+    container_name: novu-api
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      API_ROOT_URL: ${API_ROOT_URL}
+      DISABLE_USER_REGISTRATION: ${DISABLE_USER_REGISTRATION}
+      PORT: ${API_PORT}
+      FRONT_BASE_URL: ${FRONT_BASE_URL}
+      MONGO_URL: ${MONGO_URL}
+      MONGO_MAX_POOL_SIZE: ${MONGO_MAX_POOL_SIZE}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_DB_INDEX: 2
+      REDIS_CACHE_SERVICE_HOST: ${REDIS_CACHE_SERVICE_HOST}
+      REDIS_CACHE_SERVICE_PORT: ${REDIS_CACHE_SERVICE_PORT}
+      S3_LOCAL_STACK: ${S3_LOCAL_STACK}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      S3_REGION: ${S3_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      JWT_SECRET: ${JWT_SECRET}
+      STORE_ENCRYPTION_KEY: ${STORE_ENCRYPTION_KEY}
+      SENTRY_DSN: ${SENTRY_DSN}
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME}
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY}
+      API_CONTEXT_PATH: ${API_CONTEXT_PATH}
+      GLOBAL_CONTEXT_PATH: ${GLOBAL_CONTEXT_PATH}
+    ports:
+      - '3000:3000'
+    networks:
+      - novu
+  novu-worker:
+    image: 'ghcr.io/novuhq/novu/worker:0.21.0'
+    depends_on:
+      - novu-mongodb
+      - novu-redis
+    container_name: novu-worker
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      MONGO_URL: ${MONGO_URL}
+      MONGO_MAX_POOL_SIZE: ${MONGO_MAX_POOL_SIZE}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_DB_INDEX: 2
+      REDIS_CACHE_SERVICE_HOST: ${REDIS_CACHE_SERVICE_HOST}
+      REDIS_CACHE_SERVICE_PORT: ${REDIS_CACHE_SERVICE_PORT}
+      S3_LOCAL_STACK: ${S3_LOCAL_STACK}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+      S3_REGION: ${S3_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      STORE_ENCRYPTION_KEY: ${STORE_ENCRYPTION_KEY}
+      SENTRY_DSN: ${SENTRY_DSN}
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME}
+      NEW_RELIC_LICENSE_KEY: ${NEW_RELIC_LICENSE_KEY}
+      GLOBAL_CONTEXT_PATH: ${GLOBAL_CONTEXT_PATH}
+    networks:
+      - novu
+  novu-ws:
+    image: 'ghcr.io/novuhq/novu/ws:0.21.0'
+    depends_on:
+      - novu-mongodb
+      - novu-redis
+    container_name: novu-ws
+    environment:
+      PORT: ${WS_PORT}
+      NODE_ENV: ${NODE_ENV}
+      MONGO_URL: ${MONGO_URL}
+      MONGO_MAX_POOL_SIZE: ${MONGO_MAX_POOL_SIZE}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_DB_INDEX: 2
+      JWT_SECRET: ${JWT_SECRET}
+      WS_CONTEXT_PATH: ${WS_CONTEXT_PATH}
+      GLOBAL_CONTEXT_PATH: ${GLOBAL_CONTEXT_PATH}
+    ports:
+      - '3002:3002'
+    networks:
+      - novu
+  novu-web:
+    build: 
+      context: ./sites/novu
+      dockerfile: ./apps/web/Dockerfile
+    depends_on:
+      - novu-api
+      - novu-worker
+    container_name: novu-web
+    environment:
+      REACT_APP_API_URL: ${API_ROOT_URL}
+      REACT_APP_ENVIRONMENT: ${NODE_ENV}
+      REACT_APP_WIDGET_EMBED_PATH: ${WIDGET_EMBED_PATH}
+      REACT_APP_DOCKER_HOSTED_ENV: 'true'
+      REACT_APP_WS_URL: ${REACT_APP_WS_URL}
+      GLOBAL_CONTEXT_PATH: ${GLOBAL_CONTEXT_PATH}
+      FRONT_BASE_CONTEXT_PATH: ${FRONT_BASE_CONTEXT_PATH}
+    ports:
+      - 4200:4200
+    networks:
+      - novu
+  novu-widget:
+    image: 'ghcr.io/novuhq/novu/widget:0.21.0'
+    depends_on:
+      - novu-api
+      - novu-worker
+      - novu-web
+    container_name: novu-widget
+    environment:
+      REACT_APP_API_URL: ${API_ROOT_URL}
+      REACT_APP_WS_URL: ${REACT_APP_WS_URL}
+      REACT_APP_ENVIRONMENT: ${NODE_ENV}
+      WIDGET_CONTEXT_PATH: ${WIDGET_CONTEXT_PATH}
+      GLOBAL_CONTEXT_PATH: ${GLOBAL_CONTEXT_PATH}
+    ports:
+      - 4500:4500
+    networks:
+      - novu
+  novu-embed:
+    depends_on:
+      - novu-widget
+    image: 'ghcr.io/novuhq/novu/embed:0.21.0'
+    container_name: novu-embed
+    environment:
+      WIDGET_URL: ${WIDGET_URL}
+      GLOBAL_CONTEXT_PATH: ${GLOBAL_CONTEXT_PATH}
+    ports:
+      - 4701:4701
+    networks:
+      - novu
+
+volumes:
+  novu-logs:
+  novu-mongodb:
+
+networks:
+  novu:

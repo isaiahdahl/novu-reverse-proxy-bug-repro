@@ -1,0 +1,31 @@
+FROM nginx:latest
+
+RUN rm -rf /etc/nginx/conf.d/*
+
+#ENV TZ=America/Chicago
+#RUN ln -snf /usr/share/zoneinfo/America/Chicago /etc/localtime && echo America/Chicago > /etc/timezone
+
+RUN apt-get update
+RUN apt-get install -y gnupg curl build-essential
+
+
+RUN apt-get update
+RUN apt-get install wget vim  -y --force-yes
+
+# Install Crontab
+#RUN apt-get install cron -y --force-yes
+#COPY crontabs/root /var/spool/cron/crontabs/root
+
+# NGINX Configs
+COPY nginx-gzip.conf /etc/nginx/conf.d/nginx-gzip.conf
+COPY nginx.conf /etc/nginx/nginx.conf
+
+
+WORKDIR /var/sites/
+
+EXPOSE 80 443 
+
+COPY ./entrypoint.sh /
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["nginx"]
